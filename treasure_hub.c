@@ -4,18 +4,310 @@
 #include <string.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
-pid_t monitor_pid = -1;
+#define TREASURE_SPACE 6
 
-void handle_sigchld(int sig) {
-    int status;
-    waitpid(monitor_pid, &status, 0);
-    printf("Monitor terminated with status %d\n", status);
-    monitor_pid = -1;
+pid_t monitor_pid = -1; //cand pid-ul e pe -1 inseamna ca monitorul e oprit
+int done=0;
+int monitor_shutting_down=0; //cand e pe 0 inseamna ca nu e in procesul de inchidere
+void handler_done(){
+  done=1;
 }
 
+void stop_monitor() {
+
+  if(monitor_shutting_down){
+    if(write(1,"Monitorul e in proces de inchidere.Nu se accepta alte comenzi",strlen("Monitorul e in proces de inchidere.Nu se accepta alte comenzi"))<0){
+      perror("Eroare la scrierea pe ecran\n");
+      exit(-1);
+    }
+    return;
+  }
+  
+    if (monitor_pid == -1) {
+        printf("Monitorul nu este in functiune\n");
+        return;
+    }
+    monitor_shutting_down=1;
+    if( (write(1,"Monitorul este in curs de oprire...\n",strlen("Monitorul este in curs de oprire...\n"))) < 0){
+      perror("Eroare la scrierea pe ecran a mesajului de oprire monitor\n");
+      exit(-1);
+    }
+    if( kill(monitor_pid, SIGTERM) <0){
+      perror("Eroare la transmiterea semnalului de oprire catre montitor\n");
+      exit(-1);
+    }
+    
+    if(usleep(5000000) ==-1){
+      perror("Eroare la usleep\n");
+      exit(-1);
+    }
+    monitor_pid=-1;
+    monitor_shutting_down=0;
+}
+
+void list_hunts(){
+
+  if(monitor_shutting_down){
+    if(write(1,"Monitorul e in proces de inchidere.Nu se accepta alte comenzi",strlen("Monitorul e in proces de inchidere.Nu se accepta alte comenzi"))<0){
+      perror("Eroare la scrierea pe ecran\n");
+      exit(-1);
+    }
+    return;
+  }
+  
+  struct dirent **hunts;
+  int k=scandir(".",&hunts,NULL,alphasort);
+  if(k<0){
+    perror("Eroare la citirea fisierelor din director \n");
+    exit(-1);
+  }
+
+  for(int i=2;i<k;i++){
+    struct stat path;
+    if( (stat(hunts[i]->d_name,&path))<0){
+     perror("Eroare stat in list_hunts\n");
+      exit(-1);
+    } 
+    
+    if( S_ISDIR(path.st_mode) ){
+      char buff[100]="\n Nume hunt: ";
+      strcat(buff,hunts[i]->d_name);
+      if(write(1,buff,strlen(buff)) <0){
+	perror("Eroare scriere pe ecran\n");
+	exit(-1);
+      }
+      write(1,"\n",strlen("\n"));
+      struct dirent **dir;
+      int p=scandir(hunts[i]->d_name,&dir,NULL,alphasort);
+      if(p<0){
+	perror("Eroare la accesarea directoarelor hunt\n");
+	exit(-1);
+      }
+      for(int j=2;j<p;j++){
+	int lines=0;
+	if(strcmp(dir[j]->d_name,"treasures")==0){
+	  char buff[1024];
+	  sprintf(buff,"./%s/%s",hunts[i]->d_name,dir[j]->d_name);
+	 
+	  int fd=open(buff,O_RDWR);
+	  if(fd<0){
+	    perror("Eroare la deschiderea fisierului\n");
+	    exit(-1);
+	  }
+	  char ch;
+	  while( read(fd,&ch,1) ==1){
+	    if(ch=='\n'){
+	      lines++;
+	    }
+	  }
+	  int comori=lines/TREASURE_SPACE;
+	  char aux[50];
+	  sprintf(aux,"Numarul de comori: %d\n",comori);
+	  if(write(1,aux,strlen(aux)) <0){
+	      perror("Eroare afisare numar de comori din hunt\n");
+	      exit(-1);
+	    }
+	}	
+      }
+
+      for(int j=0;j<p;j++){
+	free(dir[j]);
+      }
+      free(dir);
+    }
+    
+  }
+  for(int i=0;i<k;i++){
+    free(hunts[i]);
+  }
+  free(hunts);
+
+  kill(getppid(),SIGTERM);
+}
+
+void view_treasure(){ 
+
+if(monitor_shutting_down){
+    if(write(1,"Monitorul e in proces de inchidere.Nu se accepta alte comenzi",strlen("Monitorul e in proces de inchidere.Nu se accepta alte comenzi"))<0){
+      perror("Eroare la scrierea pe ecran\n");
+      exit(-1);
+    }
+    return;
+  }
+  
+  char executabil[50];
+  char comoara[50];
+  char hunt[50];
+
+  if(write(1,"Introduceti numele hunt-ului dorit: \n",strlen("Introduceti numele hunt-ului dorit: \n"))<0){
+    perror("Eroare afisare mesaj pentru view_treasure\n");
+    exit(-1);
+  }
+  if(read(0,hunt,sizeof(hunt))<0){
+    perror("Eroare la citirea hunt-ului dorit\n");
+    exit(-1);
+  }
+  hunt[strcspn(hunt, "\n")] = '\0';
+
+    if(write(1,"Introduceti ID-ul treasure-ului dorit: \n",strlen("Introduceti ID-ul treasure-ului dorit: \n"))<0){
+    perror("Eroare afisare mesaj pentru view_treasure\n");
+    exit(-1);
+  }
+  if(read(0,comoara,sizeof(comoara))<0){
+    perror("Eroare la citirea treasure-ului dorit\n");
+    exit(-1);
+  }
+  comoara[strcspn(comoara, "\n")] = '\0';
+
+  
+    if(write(1,"Introduceti cum doriti sa se numeasca executabilul format(se va compila treasure_manager):  \n",strlen("Introduceti cum doriti sa se numeasca executabilul format(se va compila treasure_manager):  \n"))<0){
+    perror("Eroare afisare mesaj pentru view_treasure\n");
+    exit(-1);
+  }
+  if(read(0,executabil,sizeof(executabil))<0){
+    perror("Eroare la citirea hunt-ului dorit\n");
+    exit(-1);
+  }
+  if(write(1,"\n",strlen("\n"))<0){
+    perror("Eroare scriere pe ecran\n");
+    exit(-1);
+  }
+  executabil[strcspn(executabil, "\n")] = '\0';
+  
+  
+  pid_t ch;
+  if( (ch=fork()) <0){
+    perror("Eroare crearea unui proces nou in view_treasure\n");
+    exit(-1);
+  }
+  if(ch==0){
+    execl("/usr/bin/gcc","/usr/bin/gcc","-Wall","-o",executabil,"treasure_manager.c",NULL);
+    perror("Eroare la compilarea din view_treasure\n");
+    exit(-1);
+  }
+  wait(&ch);
+  if( (ch=fork()) <0){
+    perror("Eroare crearea unui proces nou\n");
+    exit(-1);
+  }
+  char exec[50]="./";
+  strcat(exec,executabil);
+
+  if(ch==0){
+    execl(exec,exec,"--view",hunt,comoara,NULL);
+    perror("Eroare executare treasure_manager\n");
+    exit(-1);
+  }
+  wait(&ch);
+
+  kill(getppid(),SIGTERM);
+}
+
+void list_treasures(){
+
+  if(monitor_shutting_down){
+    if(write(1,"Monitorul e in proces de inchidere.Nu se accepta alte comenzi",strlen("Monitorul e in proces de inchidere.Nu se accepta alte comenzi"))<0){
+      perror("Eroare la scrierea pe ecran\n");
+      exit(-1);
+    }
+    return;
+  }
+  
+ char executabil[50];
+  char hunt[50];
+
+  if(write(1,"Introduceti numele hunt-ului dorit: \n",strlen("Introduceti numele hunt-ului dorit: \n"))<0){
+    perror("Eroare afisare mesaj pentru view_treasure\n");
+    exit(-1);
+  }
+  if(read(0,hunt,sizeof(hunt))<0){
+    perror("Eroare la citirea hunt-ului dorit\n");
+    exit(-1);
+  }
+  hunt[strcspn(hunt, "\n")] = '\0';
+  
+    if(write(1,"Introduceti cum doriti sa se numeasca executabilul format(se va compila treasure_manager):  \n",strlen("Introduceti cum doriti sa se numeasca executabilul format(se va compila treasure_manager):  \n"))<0){
+    perror("Eroare afisare mesaj pentru view_treasure\n");
+    exit(-1);
+  }
+  if(read(0,executabil,sizeof(executabil))<0){
+    perror("Eroare la citirea hunt-ului dorit\n");
+    exit(-1);
+  }
+  if(write(1,"\n",strlen("\n"))<0){
+    perror("Eroare scriere pe ecran\n");
+    exit(-1);
+  }
+  executabil[strcspn(executabil, "\n")] = '\0';
+  
+  
+  pid_t ch;
+  if( (ch=fork()) <0){
+    perror("Eroare crearea unui proces nou in view_treasure\n");
+    exit(-1);
+  }
+  if(ch==0){
+    execl("/usr/bin/gcc","/usr/bin/gcc","-Wall","-o",executabil,"treasure_manager.c",NULL);
+    perror("Eroare la compilarea din view_treasure\n");
+    exit(-1);
+  }
+  wait(&ch);
+  if( (ch=fork()) <0){
+    perror("Eroare crearea unui proces nou\n");
+    exit(-1);
+  }
+  char exec[50]="./";
+  strcat(exec,executabil);
+
+  if(ch==0){
+    execl(exec,exec,"--list",hunt,NULL);
+    perror("Eroare executare treasure_manager\n");
+    exit(-1);
+  }
+  wait(&ch);
+
+  kill(getppid(),SIGTERM);
+  
+}
+
+
+void send_signal(int signal){
+
+  if (monitor_shutting_down) {
+        if (write(1, "Monitorul e in proces de inchidere. Nu se accepta alte comenzi\n", 
+                  strlen("Monitorul e in proces de inchidere. Nu se accepta alte comenzi\n")) < 0) {
+            perror("Eroare scriere ecran\n");
+            exit(-1);
+        }
+	return;
+  }
+
+  if(monitor_pid ==-1){
+    if( (write(1,"Monitorul este oprit. Nu se poate realiza comanda ceruta\n",strlen("Monitorul este oprit. Nu se poate realiza comanda ceruta\n"))) < 0){
+      perror("Eroare la scrierea problemei din send_signal");
+      exit(-1);
+    }
+  }
+    kill(monitor_pid,signal);
+  
+}
+
+
 void start_monitor() {
-    if (monitor_pid != -1) {
+
+  if(monitor_shutting_down){
+    if(write(1,"Monitorul e in proces de inchidere.Nu se accepta alte comenzi",strlen("Monitorul e in proces de inchidere.Nu se accepta alte comenzi"))<0){
+      perror("Eroare la scrierea pe ecran\n");
+      exit(-1);
+    }
+    return;
+  }
+
+  if (monitor_pid != -1) {
       if(write(1,"Monitorul e deja in functiune\n",strlen("Monitorul e deja in functiune\n"))<0){
 	perror("Eroare scriere pe ecran\n");
 	exit(-1);
@@ -29,21 +321,22 @@ void start_monitor() {
         exit(1);
     }
     if (monitor_pid == 0) {
-        printf("Procesul fiu monitor PID: %d\n", getpid());
+
+      struct sigaction sg;
+      sg.sa_handler=list_hunts;
+      sigaction(SIGUSR1,&sg,NULL);
+      sg.sa_handler=view_treasure;
+      sigaction(SIGUSR2,&sg,NULL);
+      sg.sa_handler=list_treasures;
+      sigaction(SIGALRM,&sg,NULL);
+      sg.sa_handler=SIG_DFL;
+      sigaction(SIGTERM,&sg,NULL);
         while (1) pause();
     }
-
-    printf("Proces parinte PID %d\n", monitor_pid);
 }
 
-void stop_monitor() {
-    if (monitor_pid == -1) {
-        printf("Monitorul nu functioneaza\n");
-        return;
-    }
+  
 
-    kill(monitor_pid, SIGTERM); 
-}
 
 int main(int argc, char **argv) {
     if (argc != 1) {
@@ -52,21 +345,32 @@ int main(int argc, char **argv) {
     }
 
     struct sigaction sa;
-    sa.sa_handler = handle_sigchld;
+    sa.sa_handler=handler_done;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
-    sigaction(SIGCHLD, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
     char input[256];
-
+    
     while (1) {
+
+      if (monitor_shutting_down) {
+        if (write(1, "Monitorul e in proces de inchidere. Nu se accepta alte comenzi\n", 
+                  strlen("Monitorul e in proces de inchidere. Nu se accepta alte comenzi\n")) < 0) {
+            perror("Eroare scriere ecran\n");
+            exit(-1);
+        }
+        continue;
+      }
+     
       if(write(1,"Command: ",strlen("Command: "))<0){
 	perror("Eroare scriere terminal\n");
 	exit(-1);
       }
 	fflush(stdout);
+      
 
-        if(read(1,input, sizeof(input))<0)
+        if(read(0,input, sizeof(input))<0)
 	  {perror("Eroare preluare comanda din terminal\n");
 	    break;
 	  }
@@ -76,7 +380,50 @@ int main(int argc, char **argv) {
             start_monitor();
         } else if (strcmp(input, "stop_monitor") == 0) {
             stop_monitor();
-        } else if (strcmp(input, "exit") == 0) {
+        }
+	else if (strcmp(input, "list_hunts") == 0) {
+	  if(monitor_pid==-1){
+    if(write(1,"Monitorul este oprit. Nu se poate efectua operatia.\n",strlen("Monitorul este oprit. Nu se poate efectua operatia.\n"))<0){
+      perror("Eroare scriere pe ecran\n");
+      exit(-1);
+    }
+  }
+	  else{done=0;
+	  send_signal(SIGUSR1);
+	  while(done!=1){
+	    pause();
+	  }
+	  }
+        }
+	else if (strcmp(input, "view_treasure") == 0) {
+	  if(monitor_pid==-1){
+    if(write(1,"Monitorul este oprit. Nu se poate efectua operatia.\n",strlen("Monitorul este oprit. Nu se poate efectua operatia.\n"))<0){
+      perror("Eroare scriere pe ecran\n");
+      exit(-1);
+    }
+  }
+	  else{done=0;
+	  send_signal(SIGUSR2);
+	  while(!done){
+	    pause();
+	  }
+	  }}
+	else if (strcmp(input, "list_treasures") == 0) {
+
+	  if(monitor_pid==-1){
+    if(write(1,"Monitorul este oprit. Nu se poate efectua operatia.\n",strlen("Monitorul este oprit. Nu se poate efectua operatia.\n"))<0){
+      perror("Eroare scriere pe ecran\n");
+      exit(-1);
+    }
+  }
+	  
+	  else{  done=0;
+	  send_signal(SIGALRM);
+	  while(done!=1){
+	    pause();
+	  }
+	  }}
+	else if (strcmp(input, "exit") == 0) {
             if (monitor_pid != -1) {
 	      if(write(1,"Monitorul este inca in functiune, nu se poate iesi din program\n",strlen("Monitorul este inca in functiune, nu se poate iesi din program\n"))<0){
 		perror("Eroare scriere ecran\n");
@@ -96,7 +443,7 @@ int main(int argc, char **argv) {
 	    exit(-1);
 	  }
         }
-    }
+    } 
 
     return 0;
 }
