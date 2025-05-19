@@ -62,7 +62,7 @@ void list_hunts() {
         }
         return;
     }
-
+    close(pfd[0]);
     struct dirent **hunts;
     int k = scandir(".", &hunts, NULL, alphasort);
     if (k < 0) {
@@ -78,7 +78,7 @@ void list_hunts() {
         }
 
         if (S_ISDIR(path.st_mode)) {
-            char buff[100] = "\n Nume hunt: ";
+            char buff[200] = "\n Nume hunt: ";
             strcat(buff, hunts[i]->d_name);
             if (write(pfd[1], buff, strlen(buff)) < 0) {
                 perror("Eroare scriere pe ecran\n");
@@ -132,7 +132,7 @@ void list_hunts() {
         free(hunts[i]);
     }
     free(hunts);
-
+   
     kill(getppid(), SIGTERM);
 }
 
@@ -461,7 +461,8 @@ int main(int argc, char **argv) {
       exit(-1);
     }
     
-    char buffer[1024];
+    char buffer[2048];
+    memset(buffer,0,sizeof(buffer));
     struct sigaction sa;
     sa.sa_handler = handler_done;
     sigemptyset(&sa.sa_mask);
